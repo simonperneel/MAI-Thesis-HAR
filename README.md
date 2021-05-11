@@ -1,2 +1,2 @@
 # MAI-Thesis-HAR
-repository with the software used for my thesis. 
+repository with the software and dataset used for my thesis. 
