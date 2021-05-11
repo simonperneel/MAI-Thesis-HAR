@@ -1,2 +1,2 @@
 # MAI-Thesis-HAR
-public repository with the software used for my thesis. 
+repository with the software used for my thesis. 
