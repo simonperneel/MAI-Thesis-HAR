@@ -1,16 +1,46 @@
 # Thesis Human Activity Recognition - Simon Perneel
 
-A set of tools and libraries written in Python code to access Xsens MTw data files and do processing, feature extraction, classification and more. Required packages and there versions are listed in ```requirements.txt```. They can easily be installed with conda in a virtual environment with following command:
+Python code written for my thesis
 
+This repository contains a set of tools and libraries to access Xsens MTw data files and do processing, feature extraction, classification and more. 
+
+## Folder structure
+
+    .
+    ├── Data                    # Folder with all data 
+    ├── Plots                   # Folder where the plots are written to
+    ├── ann_classifier          # classification with neural net 
+    ├── main.py                 # main file: pre-processing, feature extraction, classifcation, evaluation, ...
+    ├── utils.py                # functions for feature extraction
+    ├── requirements.txt        # required packages and their versions
+    └── README.md
+
+## Installation (Windows)
+- Python version 3.8 is recommended and can be installed here: https://www.python.org/downloads/release/python-3810/
+- (Mini)Conda for easy installation of the required packages: https://docs.conda.io/en/latest/miniconda.html 
+
+
+1. Dowload the code and data from Github on https://github.com/simonperneel/MAI-Thesis-HAR or with following command in the terminal: \
+```git clone https://github.com/simonperneel/MAI-Thesis-HAR ``` 
+
+2. Required packages and there versions  for running the code are listed in ```requirements.txt```. They can easily be installed with conda in a virtual environment with following command in the terminal: \
 ```conda create --name <envname> --file requirements.txt``` \
-Activate the enviromnent for running the python code:
 
+3. Activate the enviromnent for running the python code: \
 ```conda activate <envname>```
 
-This project contains the code to access and load XsensData. 
-The starting point are the CSV files exported by the MTw software. the naming of these files follow a fixed template ```tp{x}-{y}-{activity}-{sensor}.csv```. With x the ID of the subject, y the trial number, activity the name of the activity (running, walking, upstairs, downstairs, jumping, standing, sitting) and sensor the sensor ID of the XSens IMU
+3. Install one more package with pip (can't be installed with conda): \
+```pip install tsfresh```
 
+4. Run the code with your IDE or from the terminal: \
+```python main.py``` \
+```python ann_classifier.py```
+
+## Code
+### ```main.py``` 
 The script automatically loads the csv files, and puts it in a pandas dataframe. 3 sensors are used, so at each time point, there are measurements from 3 sensors. All recorded data is stored in one data frame and exported in ```processed_data.csv```
+
+The starting point are the CSV files exported by the MTw software. 
 
 **Example**  
 sensor 1: tp1-1-running-000_00B42D0F.csv  
@@ -26,6 +56,11 @@ This is one trial of an activity by a subject. These files are read in and the m
 | ...           | ...        | ...           | ...           |     | ...           | ...           |     | ...           | ...           |     | ...            |
 | 400           | 2          | 10.23         | 4.99          |     | 2.33          | -5.45         |     | 3.49          | 0.98          |     | running        |
 
+### ```ann_classifier.py``` 
+classification on ***raw*** data with a MLP neural net. 
+
+### ```utils.py``` 
+file containing some self-defined functions for feature extraction
 
 
 
