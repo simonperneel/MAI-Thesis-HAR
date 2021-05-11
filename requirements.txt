@@ -1,0 +1,23 @@
+# This file may be used to create an environment using:
+# $ conda create --name <env> --file <this file>
+# platform: win-64
+keras=2.4.3=0
+keras-applications=1.0.8=py_1
+keras-base=2.4.3=py_0
+keras-preprocessing=1.1.2=pyhd3eb1b0_0
+matplotlib=3.3.4=py37haa95532_0
+matplotlib-base=3.3.4=py37h49ac443_0
+numpy=1.19.2=py37hadc3359_0
+numpy-base=1.19.2=py37ha3acd2a_0
+pandas=1.2.1=py37hf11a4ad_0
+scikit-learn=0.24.1=py37hf11a4ad_0
+scipy=1.6.0=py37h14eb087_0
+seaborn=0.11.1=pyhd3eb1b0_0
+tensorboard=2.3.0=pyh4dce500_0
+tensorboard-plugin-wit=1.6.0=py_0
+tensorflow=2.3.0=mkl_py37h04bc1aa_0
+tensorflow-base=2.3.0=eigen_py37h17acbac_0
+tensorflow-estimator=2.3.0=pyheb71bc4_0
+IPython
+
+
