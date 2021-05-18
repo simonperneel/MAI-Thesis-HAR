@@ -37,7 +37,7 @@ This repository contains a set of tools and libraries to access Xsens MTw data f
 ```python ann_classifier.py```
 
 ## Code
-[```Click here```](https://simonperneel.github.io/utils.html) for the documented source code 
+[```Click here```](https://simonperneel.github.io/modules.html) for the documented source code 
 ### [```main.py```](./main.py)
 The script automatically loads the csv files, and puts it in a pandas dataframe. 3 sensors are used, so at each time point, there are measurements from 3 sensors. All recorded data is stored in one data frame and exported in ```processed_data.csv```
 
