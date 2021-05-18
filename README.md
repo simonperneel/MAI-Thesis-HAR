@@ -1,4 +1,4 @@
-# Thesis Human Activity Recognition - Simon Perneel
+# Thesis Human Activity Recognition
 
 Python code written for my thesis
 
