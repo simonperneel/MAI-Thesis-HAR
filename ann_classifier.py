@@ -170,7 +170,7 @@ def show_confusion_matrix(validations, predictions, normalized=False):
         plt.title('Confusion Matrix')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
-    plt.savefig("Plots/ANNconfusionmatrix.png", format='png')
+    plt.savefig("Plots/ANNconfusionmatrix.pdf", format='pdf')
     plt.show()
 
 
@@ -182,7 +182,7 @@ def main():
   plt.style.use('ggplot')
   print('keras version ', keras.__version__)
 
-  # load the preprocessed data from main.py
+  # load the preprocessed data from LoadXSens.py
   df = pd.read_pickle("Data/data.pkl")  # enter filename
   # output first lines of the dataset
   # print(df.head())

@@ -5,7 +5,7 @@
     script to load MTw XSens generated csv file into a dataframe,
     divide the time series IMU data in time windows,
     add and select good features from it,
-    classify the activities using a learning algorithm
+    classify the activities using a supervised learning algorithm
     and evaluate the model
 
 		Author: Simon Perneel - simon.perneel@hotmail.com
@@ -27,15 +27,17 @@ import time
 import glob
 import ntpath
 
-from tsfresh import extract_features, extract_relevant_features, select_features
+import tsfresh
+from tsfresh import extract_features, extract_relevant_features, select_features, feature_selection
 from tsfresh.utilities.dataframe_functions import impute
 from tsfresh.feature_extraction import settings, feature_calculators
+from tsfresh.feature_selection.relevance import calculate_relevance_table
 
 from sklearn import preprocessing, svm
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, normalize
 from sklearn.tree import plot_tree, DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
-from sklearn.model_selection import train_test_split, cross_val_score, LeaveOneGroupOut, cross_validate, KFold
+from sklearn.model_selection import train_test_split, LeaveOneGroupOut, KFold, GridSearchCV
 from sklearn.feature_selection import SequentialFeatureSelector
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.neighbors import KNeighborsClassifier
@@ -50,7 +52,7 @@ from scipy.stats import kurtosis, skew
 # own defined functions
 import utils
 
-
+# =================== FUNCTION DEFINITIONS ===============================================
 def show_df_info(df):
     """
     :param df: dataframe to print some information of
@@ -66,6 +68,24 @@ def show_df_info(df):
     # n = len(pd.unique(dataframe['Subject-id']))
     # print('amount of test persons: ', n)
     print("............................................................")
+
+    # pie plot
+    if 0:  # 0/1 to (un)comment
+        activity = ['Subject 1', 'Subject 2', 'Subject 3','Subject 4 ', 'Subject 5', 'Subject 6', 'Subject 7', 'Subject 8', 'Subject 9']
+        activity_data = df['Subject-id'].groupby(df['Subject-id']).count().values
+        sns.set_palette("Spectral", n_colors=9)
+        plt.pie(activity_data, labels=activity, autopct='%1.1f%%', shadow=False, startangle=170, textprops={'fontsize': 9})
+
+        plt.savefig('Plots\DataPie.pdf', format='pdf', bbox_inches='tight')
+    # facet grid
+    if 0: # 0/1 to (un)comment
+        sns.set_palette('Set1')
+        facetgrid = sns.FacetGrid(df, hue='Activity', size=6,aspect=2)
+        facetgrid.map(sns.kdeplot,'Gyr_norm_wrist').add_legend()
+        plt.show()
+        facetgrid = sns.FacetGrid(df, hue='Activity', size=6,aspect=2)
+        facetgrid.map(sns.kdeplot,'FreeAcc_norm_thigh').add_legend()
+        plt.show()
 
 def create_segments(df, time_steps, step):
     """
@@ -99,50 +119,6 @@ def create_segments(df, time_steps, step):
 
     return segments, labels
 
-def auto_feat_extract(all_segments_df):
-    """
-    :param all_segments_df: dataframe of all segments which are identified by their 'Segment-id'
-    :return: X: dataframe containing a number of features for each segment (auto-calculated using tsfresh package)
-    """
-
-    pd.set_option('display.max_columns', None)
-    #print(all_segments_df.head(1))
-    # drop irrelevant columns for feature extraction
-    #cols = [0,1,5,6,7,14,15,16,21,22,23,24,28,29,30,37,38,39,40,41,42,
-     #       43,44,45,46,47,51,52,53,60,61,62,63,64,65,66,67,68,69,70]
-    # only use norm as features, drop all XYZ axis features
-    cols = [range(71)]
-
-    all_segments_df = all_segments_df.drop(all_segments_df.columns[cols], axis=1)
-    all_segments_df = all_segments_df.drop(['Subject-id', 'Timeseries-id','Activity','ActivityEncoded','Mag_norm_wrist',
-                                            'Mag_norm_thigh','Mag_norm_ankle'], axis=1)
-
-    pd.set_option('display.max_columns', None)
-    print(all_segments_df.head(1))
-
-    #print(all_segments_df.head())
-    # extract features
-    minimal_settings = settings.MinimalFCParameters()
-    X = extract_features(all_segments_df, column_id='Segment-id', default_fc_parameters=minimal_settings, impute_function=impute)
-    #print(X.shape)
-    #pd.set_option('display.max_columns', None)
-    #print("features table: ", X.head())
-
-    return X
-
-def orientation_difference(x):
-    """
-    :param x: a segment of the time series
-    :return: difference in roll, pitch and yaw (in radians) from the orientation at the beginning vs. orientation at the
-    end of the segment, from the sensor at the thigh.
-    """
-    d = {}
-    roll, pitch, yaw = utils.orientationdiff(x['Quat_q0_thigh'], x['Quat_q1_thigh'], x['Quat_q2_thigh'], x['Quat_q3_thigh'])
-    d['roll_diff_thigh'] = roll
-    d['pitch_diff_thigh'] = pitch
-    d['yaw_diff_thigh'] = yaw
-    return pd.Series(d, index=['roll_diff_thigh', 'pitch_diff_thigh', 'yaw_diff_thigh'])
-
 def feat_extract(all_segments_df, feature_set):
     """
     :param feature_set: the set of features that is used
@@ -151,91 +127,229 @@ def feat_extract(all_segments_df, feature_set):
     """
     pd.set_option('display.max_columns', None)
     if feature_set == 'set1':
+        start = time.time()
+        # 20 optimal features, all other features commented out
         X = all_segments_df.groupby('Segment-id').agg(
-                # statistical features
-                kurtosis_acc_wrist=('FreeAcc_norm_wrist', lambda x: kurtosis(x)),
-                kurtosis_acc_thigh=('FreeAcc_norm_thigh', lambda x: kurtosis(x)),
-                kurtosis_acc_ankle=('FreeAcc_norm_ankle', lambda x: kurtosis(x)),
-                kurtosis_gyr_wrist=('Gyr_norm_wrist', lambda x: kurtosis(x)),
-                kurtosis_gyr_thigh=('Gyr_norm_thigh', lambda x: kurtosis(x)),
-                kurtosis_gyr_ankle=('Gyr_norm_ankle', lambda x: kurtosis(x)),
-                skew_acc_wrist=('FreeAcc_norm_wrist', lambda x: skew(x)),
-                skew_acc_thigh=('FreeAcc_norm_thigh', lambda x: skew(x)),
-                skew_acc_ankle=('FreeAcc_norm_ankle', lambda x: skew(x)),
-                skew_gyr_wrist=('Gyr_norm_wrist', lambda x: skew(x)),
-                skew_gyr_thigh=('Gyr_norm_thigh', lambda x: skew(x)),
-                skew_gyr_ankle=('Gyr_norm_ankle', lambda x: skew(x)),
-                mean_acc_wrist=('Acc_norm_wrist', mean),
-                mean_acc_thigh=('Acc_norm_thigh', mean),
-                mean_acc_ankle=('Acc_norm_ankle', mean),
-                mean_gyr_wrist=('Gyr_norm_wrist', mean),
-                mean_gyr_thigh=('Gyr_norm_thigh', mean),
-                mean_gyr_ankle=('Gyr_norm_ankle', mean),
-                #max_mag_X_thigh=('Mag_X_thigh', lambda x: max(x)),
-                #max_mag_Y_thigh=('Mag_Y_thigh', lambda x: max(x)),
-                #max_mag_Z_thigh=('Mag_Z_thigh', lambda x: max(x)),
-                #max_mag_X_wrist=('Mag_X_wrist', lafmbda x: max(x)),
-                #max_mag_Y_wrist=('Mag_Y_wrist', lambda x: max(x)),
-                #max_mag_Z_wrist=('Mag_Z_wrist', lambda x: max(x)),
-                std_acc_wrist=('Acc_norm_wrist', lambda x: np.std(x)),
-                std_acc_thigh=('Acc_norm_thigh', lambda x: np.std(x)),
-                std_acc_ankle=('Acc_norm_ankle', lambda x: np.std(x)),
-                max_acc_wrist=('FreeAcc_norm_wrist', lambda x: max(x)),
-                max_acc_thigh=('FreeAcc_norm_thigh', lambda x: max(x)),
-                max_acc_ankle=('FreeAcc_norm_ankle', lambda x: max(x)),
-                # time features
-                rms_acc_wrist=('FreeAcc_norm_wrist', lambda x: np.sqrt(mean(x)**2)),
-                rms_acc_thigh=('FreeAcc_norm_thigh', lambda x: np.sqrt(mean(x)**2)),
-                rms_acc_ankle=('FreeAcc_norm_ankle', lambda x: np.sqrt(mean(x)**2)),
-                rms_gyr_wrist=('Gyr_norm_wrist', lambda x: np.sqrt(mean(x)**2)),
-                rms_gyr_thigh=('Gyr_norm_thigh', lambda x: np.sqrt(mean(x)**2)),
-                rms_gyr_ankle=('Gyr_norm_ankle', lambda x: np.sqrt(mean(x)**2)),
-                autocorr_wrist_10=('Acc_norm_wrist', lambda x: x.autocorr(lag=10)),
-                autocorr_thigh_10=('Acc_norm_thigh', lambda x: x.autocorr(lag=10)),
-                autocorr_ankle_10=('Acc_norm_ankle', lambda x: x.autocorr(lag=10)),
-                variance_acc_wrist=('FreeAcc_norm_wrist', lambda x: np.var(x)),
-                variance_acc_thigh=('FreeAcc_norm_thigh', lambda x: np.var(x)),
-                variance_acc_ankle=('FreeAcc_norm_ankle', lambda x: np.var(x)),
-                variance_gyr_wrist=('Gyr_norm_wrist', lambda x: np.var(x)),
-                variance_gyr_thigh=('Gyr_norm_wrist', lambda x: np.var(x)),
-                variance_gyr_ankle=('Gyr_norm_wrist', lambda x: np.var(x)),
-                # frequency features
-                first_spectral_peak_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'peak')[1]),
-                second_spectral_peak_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'peak')[2]),
-                third_spectral_peak_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'peak')[3]),
-                fourth_spectral_peak_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'peak')[4]),
-                fifth_spectral_peak_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'peak')[5]),
-                first_spectral_peak_freq_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'freq')[1]),
-                second_spectral_peak_freq_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'freq')[2]),
-                third_spectral_peak_freq_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'freq')[3]),
-                fourth_spectral_peak_freq_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'freq')[4]),
-                fifth_spectral_peak_freq_thigh=('Acc_norm_thigh', lambda x: utils.DFT(x, 'freq')[5]),
-                first_spectral_peak_freq_wrist=('Acc_norm_wrist', lambda x: utils.DFT(x, 'freq')[1]),
-                second_spectral_peak_freq_wrist=('Acc_norm_wrist', lambda x: utils.DFT(x, 'freq')[2]),
-                third_spectral_peak_freq_wrist=('Acc_norm_wrist', lambda x: utils.DFT(x, 'freq')[3]),
-                fourth_spectral_peak_freq_wrist=('Acc_norm_wrist', lambda x: utils.DFT(x, 'freq')[4]),
-                fifth_spectral_peak_freq_wrist=('Acc_norm_wrist', lambda x: utils.DFT(x, 'freq')[5]),
-                # label
-                label=('Activity', 'first'),
+                        # statistical features
+                        #kurtosis_acc_wrist=('FreeAcc_norm_wrist', lambda x: kurtosis(x)),
+                        #kurtosis_acc_thigh=('FreeAcc_norm_thigh', lambda x: kurtosis(x)),
+                        kurtosis_acc_ankle=('FreeAcc_norm_ankle', lambda x: kurtosis(x)),
+                        #kurtosis_gyr_wrist=('Gyr_norm_wrist', lambda x: kurtosis(x)),
+                        #kurtosis_gyr_thigh=('Gyr_norm_thigh', lambda x: kurtosis(x)),
+                        #kurtosis_gyr_ankle=('Gyr_norm_ankle', lambda x: kurtosis(x)),
+                        #skew_acc_wrist=('FreeAcc_norm_wrist', lambda x: skew(x)),
+                        skew_acc_thigh=('FreeAcc_norm_thigh', lambda x: skew(x)),
+                        skew_acc_ankle=('FreeAcc_norm_ankle', lambda x: skew(x)),
+                        #skew_gyr_wrist=('Gyr_norm_wrist', lambda x: skew(x)),
+                        #skew_gyr_thigh=('Gyr_norm_thigh', lambda x: skew(x)),
+                        #skew_gyr_ankle=('Gyr_norm_ankle', lambda x: skew(x)),
+                        mean_acc_wrist=('Acc_norm_wrist', lambda x: mean(x)),
+                        mean_acc_thigh=('Acc_norm_thigh', lambda x: mean(x)),
+                        #mean_acc_ankle=('Acc_norm_ankle', lambda x: mean(x)),
+                        #mean_gyr_wrist=('Gyr_norm_wrist', lambda x: mean(x)),
+                        mean_gyr_thigh=('Gyr_norm_thigh', lambda x: mean(x)),
+                        mean_gyr_ankle=('Gyr_norm_ankle', lambda x: mean(x)),
+                        std_acc_wrist=('Acc_norm_wrist', lambda x: np.std(x)),
+                        std_acc_thigh=('Acc_norm_thigh', lambda x: np.std(x)),
+                        #std_acc_ankle=('Acc_norm_ankle', lambda x: np.std(x)),
+                        std_gyr_wrist=('Gyr_norm_wrist', lambda x: np.std(x)),
+                        #std_gyr_thigh=('Gyr_norm_thigh', lambda x: np.std(x)),
+                        #std_gyr_ankle=('Gyr_norm_ankle', lambda x: np.std(x)),
+                        #max_acc_wrist=('FreeAcc_norm_wrist', lambda x: max(x)),
+                        #max_acc_thigh=('FreeAcc_norm_thigh', lambda x: max(x)),
+                        #max_acc_ankle=('FreeAcc_norm_ankle', lambda x: max(x)),
+                        #max_gyr_wrist=('Gyr_norm_wrist', lambda x: max(x)),
+                        #max_gyr_thigh=('Gyr_norm_thigh', lambda x: max(x)),
+                        max_gyr_ankle=('Gyr_norm_ankle', lambda x: max(x)),
+                        # time features
+                        rms_acc_wrist=('FreeAcc_norm_wrist', lambda x: np.sqrt(mean(x)**2)),
+                        rms_acc_thigh=('FreeAcc_norm_thigh', lambda x: np.sqrt(mean(x)**2)),
+                        #rms_acc_ankle=('FreeAcc_norm_ankle', lambda x: np.sqrt(mean(x)**2)),
+                        #rms_gyr_wrist=('Gyr_norm_wrist', lambda x: np.sqrt(mean(x)**2)),
+                        rms_gyr_thigh=('Gyr_norm_thigh', lambda x: np.sqrt(mean(x)**2)),
+                        rms_gyr_ankle=('Gyr_norm_ankle', lambda x: np.sqrt(mean(x)**2)),
+                        autocorr_acc_wrist_10=('Acc_norm_wrist', lambda x: x.autocorr(lag=10)),
+                        #autocorr_acc_thigh_10=('Acc_norm_thigh', lambda x: x.autocorr(lag=10)),
+                        autocorr_acc_ankle_10=('Acc_norm_ankle', lambda x: x.autocorr(lag=10)),
+                        autocorr_gyr_wrist_10=('Gyr_norm_wrist', lambda x: x.autocorr(lag=10)),
+                        autocorr_gyr_thigh_10=('Gyr_norm_thigh', lambda x: x.autocorr(lag=10)),
+                        #autocorr_gyr_ankle_10=('Gyr_norm_ankle', lambda x: x.autocorr(lag=10)),
+                        #variance_acc_wrist=('FreeAcc_norm_wrist', lambda x: np.var(x)),
+                        #variance_acc_thigh=('FreeAcc_norm_thigh', lambda x: np.var(x)),
+                        #variance_acc_ankle=('FreeAcc_norm_ankle', lambda x: np.var(x)),
+                        #variance_gyr_wrist=('Gyr_norm_wrist', lambda x: np.var(x)),
+                        #variance_gyr_thigh=('Gyr_norm_thigh', lambda x: np.var(x)),
+                        #variance_gyr_ankle=('Gyr_norm_ankle', lambda x: np.var(x)),
+                        # frequency features
+                        #first_spectral_peak_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'peak')[1]),
+                        #second_spectral_peak_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'peak')[2]),
+                        #third_spectral_peak_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'peak')[3]),
+                        #fourth_spectral_peak_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'peak')[4]),
+                        #fifth_spectral_peak_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'peak')[5]),
+                        #first_spectral_peak_freq_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'freq')[1]),
+                        #second_spectral_peak_freq_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'freq')[2]),
+                        #third_spectral_peak_freq_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'freq')[3]),
+                        #fourth_spectral_peak_freq_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'freq')[4]),
+                        #fifth_spectral_peak_freq_thigh=('FreeAcc_norm_thigh', lambda x: utils.DFT(x, 'freq')[5]),
+                        #first_spectral_peak_gyr_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'peak')[1]),
+                        #second_spectral_peak_gyr_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'peak')[2]),
+                        #third_spectral_peak_gyr_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'peak')[3]),
+                        #fourth_spectral_peak_gyr_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'peak')[4]),
+                        #fifth_spectral_peak_gyr_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'peak')[5]),
+                        first_spectral_peak_gyr_freq_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'freq')[1]),
+                        #second_spectral_peak_gyr_freq_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'freq')[2]),
+                        #third_spectral_peak_gyr_freq_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'freq')[3]),
+                        #fourth_spectral_peak_gyr_freq_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'freq')[4]),
+                        #fifth_spectral_peak_gyr_freq_thigh=('Gyr_norm_thigh', lambda x: utils.DFT(x, 'freq')[5]),
+                        # label
+                        label=('Activity', 'first'),
+                    )
+        # additional orientation feature, calculated with apply function
+        Y = all_segments_df.groupby('Segment-id').apply(lambda x: orientation_difference(x, 'thigh'))
+
+    if feature_set == 'magnetometer':
+    # for testing features
+        X = all_segments_df.groupby('Segment-id').agg(
+            # magnetometer features
+            kurtosis_mag_X_wrist=('Mag_X_wrist', lambda x: kurtosis(x)),
+            kurtosis_mag_Y_wrist=('Mag_Y_wrist', lambda x: kurtosis(x)),
+            kurtosis_mag_Z_wrist=('Mag_Y_wrist', lambda x: kurtosis(x)),
+            kurtosis_mag_X_thigh=('Mag_X_thigh', lambda x: kurtosis(x)),
+            kurtosis_mag_Y_thigh=('Mag_Y_thigh', lambda x: kurtosis(x)),
+            kurtosis_mag_Z_thigh=('Mag_Z_thigh', lambda x: kurtosis(x)),
+            kurtosis_mag_X_ankle=('Mag_X_ankle', lambda x: kurtosis(x)),
+            kurtosis_mag_Y_ankle=('Mag_Y_ankle', lambda x: kurtosis(x)),
+            kurtosis_mag_Z_ankle=('Mag_Z_ankle', lambda x: kurtosis(x)),
+            skew_mag_X_wrist=('Mag_X_wrist', lambda x: skew(x)),
+            skew_mag_Y_wrist=('Mag_Y_wrist', lambda x: skew(x)),
+            skew_mag_Z_wrist=('Mag_Y_wrist', lambda x: skew(x)),
+            skew_mag_X_thigh=('Mag_X_thigh', lambda x: skew(x)),
+            skew_mag_Y_thigh=('Mag_Y_thigh', lambda x: skew(x)),
+            skew_mag_Z_thigh=('Mag_Z_thigh', lambda x: skew(x)),
+            skew_mag_X_ankle=('Mag_X_ankle', lambda x: skew(x)),
+            skew_mag_Y_ankle=('Mag_Y_ankle', lambda x: skew(x)),
+            skew_mag_Z_ankle=('Mag_Z_ankle', lambda x: skew(x)),
+            max_mag_X_thigh=('Mag_X_thigh', lambda x: max(x)),
+            max_mag_Y_thigh=('Mag_Y_thigh', lambda x: max(x)),
+            max_mag_Z_thigh=('Mag_Z_thigh', lambda x: max(x)),
+            max_mag_X_wrist=('Mag_X_wrist', lambda x: max(x)),
+            max_mag_Y_wrist=('Mag_Y_wrist', lambda x: max(x)),
+            max_mag_Z_wrist=('Mag_Z_wrist', lambda x: max(x)),
+            max_mag_X_ankle=('Mag_X_ankle', lambda x: max(x)),
+            max_mag_Y_ankle=('Mag_Y_ankle', lambda x: max(x)),
+            max_mag_Z_ankle=('Mag_Z_ankle', lambda x: max(x)),
+            rms_mag_X_wrist=('Mag_X_wrist', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_Y_wrist=('Mag_Y_wrist', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_Z_wrist=('Mag_Z_wrist', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_X_thigh=('Mag_X_thigh', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_Y_thigh=('Mag_Y_thigh', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_Z_thigh=('Mag_Z_thigh', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_X_ankle=('Mag_X_ankle', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_Y_ankle=('Mag_Y_ankle', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_Z_ankle=('Mag_Z_ankle', lambda x: np.sqrt(mean(x)**2)),
+            mean_mag_X_ankle=('Mag_X_ankle', lambda x: mean(x)),
+            mean_mag_Y_ankle=('Mag_Y_ankle', lambda x: mean(x)),
+            mean_mag_Z_ankle=('Mag_Z_ankle', lambda x: mean(x)),
+            mean_mag_X_wrist=('Mag_X_wrist', lambda x: mean(x)),
+            mean_mag_Y_wrist=('Mag_Y_wrist', lambda x: mean(x)),
+            mean_mag_Z_wrist=('Mag_Z_wrist', lambda x: mean(x)),
+            mean_mag_X_thigh=('Mag_X_thigh', lambda x: mean(x)),
+            mean_mag_Y_thigh=('Mag_Y_thigh', lambda x: mean(x)),
+            mean_mag_Z_thigh=('Mag_Z_thigh', lambda x: mean(x)),
+            variance_mag_X_wrist=('Mag_X_wrist', lambda x: np.var(x)),
+            variance_mag_Y_wrist=('Mag_Y_wrist', lambda x: np.var(x)),
+            variance_mag_Z_wrist=('Mag_Z_wrist', lambda x: np.var(x)),
+            variance_mag_X_ankle=('Mag_X_ankle', lambda x: np.var(x)),
+            variance_mag_Y_ankle=('Mag_Y_ankle', lambda x: np.var(x)),
+            variance_mag_Z_ankle=('Mag_Z_ankle', lambda x: np.var(x)),
+            variance_mag_X_thigh=('Mag_X_thigh', lambda x: np.var(x)),
+            variance_mag_Y_thigh=('Mag_Y_thigh', lambda x: np.var(x)),
+            variance_mag_Z_thigh=('Mag_Z_thigh', lambda x: np.var(x)),
+            std_mag_X_wrist=('Mag_X_wrist', lambda x: np.std(x)),
+            std_mag_Y_wrist=('Mag_Y_wrist', lambda x: np.std(x)),
+            std_mag_Z_wrist=('Mag_Z_wrist', lambda x: np.std(x)),
+            std_mag_X_ankle=('Mag_X_ankle', lambda x: np.std(x)),
+            std_mag_Y_ankle=('Mag_Y_ankle', lambda x: np.std(x)),
+            std_mag_Z_ankle=('Mag_Z_ankle', lambda x: np.std(x)),
+            std_mag_X_thigh=('Mag_X_thigh', lambda x: np.std(x)),
+            std_mag_Y_thigh=('Mag_Y_thigh', lambda x: np.std(x)),
+            std_mag_Z_thigh=('Mag_Z_thigh', lambda x: np.std(x)),
+            autocorr_mag_X_thigh_10=('Mag_X_thigh', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_Y_thigh_10=('Mag_Y_thigh', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_Z_thigh_10=('Mag_Z_thigh', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_X_ankle_10=('Mag_X_ankle', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_Y_ankle_10=('Mag_Y_ankle', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_Z_ankle_10=('Mag_Z_ankle', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_X_wrist_10=('Mag_X_wrist', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_Y_wrist_10=('Mag_Y_wrist', lambda x: x.autocorr(lag=10)),
+            autocorr_mag_Z_wrist_10=('Mag_Z_wrist', lambda x: x.autocorr(lag=10)),
+            # label
+            label=('Activity', 'first'),
             )
         # additional orientation feature, calculated with apply function
         Y = all_segments_df.groupby('Segment-id').apply(orientation_difference)
-    # add orientation feature with the other features
+
+    # add orientation feature with the other featuress
     X = pd.merge(X, Y, on=('Segment-id'))
-
-    if feature_set == 'set2':
-    # for testing other combinations of features
-        X = all_segments_df.groupby('Segment-id').agg(
-            kurtosis_wrist=('Acc_norm_wrist', lambda x: kurtosis(x)),
-            label=('Activity', 'first')
-            )
-
-    print(X.head())
-    print('%i features are extracted' % len(X.columns))
+    end = time.time()
+    print('computing time features: %.2f' % (end-start))
+    #print(X.head())
+    print('%i features are extracted' % (len(X.columns)-1))
     all_labels = X.pop('label')
     all_labels = np.array(all_labels)
 
     return X, all_labels
+
+def auto_feat_extract(all_segments_df, all_labels):
+    """
+    :param all_segments_df: dataframe of all segments which are identified by their 'Segment-id'
+    :return: X: dataframe containing a number of features for each segment (auto-calculated using tsfresh package)
+    """
+
+    pd.set_option('display.max_columns', None)
+    #print(all_segments_df.head(1))
+    # only use norm as features, drop all XYZ axis features
+    cols = [range(71)]
+
+    all_segments_df = all_segments_df.drop(all_segments_df.columns[cols], axis=1)
+    # other columns to drop
+    all_segments_df = all_segments_df.drop(['Acc_norm_ankle', 'Acc_norm_wrist','Acc_norm_thigh','Subject-id', 'Timeseries-id','Activity','ActivityEncoded'], axis=1)
+
+    # print remaining columns for extraction
+    pd.set_option('display.max_columns', None)
+    print(all_segments_df.head(1))
+
+    # extract features
+    s = settings.EfficientFCParameters()
+    X = extract_features(all_segments_df, column_id='Segment-id', default_fc_parameters=s, impute_function=impute)
+    print("total extracted features: ", X.shape[1])
+    # find most relevant features
+    all_labels = pd.Series(all_labels)
+    relevance_table = calculate_relevance_table(X, all_labels)
+    relevance_table = relevance_table[relevance_table.relevant]
+    relevance_table.sort_values("p_value", inplace=True)
+    # select top 20 most relevant features
+    selected_features = relevance_table["feature"][:20]
+    X_filtered = X[selected_features]
+    print("most relevant features :", X_filtered.columns)
+    print(X_filtered.shape)
+
+    return X_filtered
+
+def orientation_difference(x, sensor):
+    """
+    :param x: a segment of the time series
+    :param sensor: 'ankle', 'wrist' or 'thigh'
+    :return: difference in roll, pitch and yaw (in radians) from the orientation at the beginning vs. orientation at the
+    end of the segment, from the sensor at the thigh.
+    """
+    d = {}
+    roll, pitch, yaw = utils.orientationdiff(x[f'Quat_q0_{sensor}'], x[f'Quat_q1_{sensor}'], x[f'Quat_q2_{sensor}'], x[f'Quat_q3_{sensor}'])
+    #print('roll: %.1f, pitch: %.2f, yaw: %.1f' % (roll, pitch, yaw))
+    d[f'roll_diff_{sensor}'] = roll
+    d[f'pitch_diff_{sensor}'] = pitch
+    d[f'yaw_diff_{sensor}'] = yaw
+    return pd.Series(d, index=[f'roll_diff_{sensor}', f'pitch_diff_{sensor}', f'yaw_diff_{sensor}'])
 
 def normalize_df(dataframe):
     cols_to_norm = ['Acc_norm_ankle','Acc_norm_wrist','Acc_norm_thigh', 'FreeAcc_norm_ankle','FreeAcc_norm_wrist',
@@ -292,7 +406,7 @@ def plot(dataframe):
     for ax in axes:
         ax.set(xlabel="Time [s]", ylabel="Acceleration [m/s²]")
     plt.show()
-    plt.savefig('Plots/Activityplot.png', format='png')
+    plt.savefig('Plots/Activityplot.pdf', format='pdf')
 
 def plot_comparison(df1, df2):
     width = 15  # inches
@@ -323,7 +437,7 @@ def plot_DT(tree, columns, dataframe):
     """
     fig = plt.figure(figsize=(10, 7.5))
     _ = plot_tree(tree, feature_names=columns.columns, class_names=dataframe["Activity"].unique(), filled=True)
-    fig.savefig("Plots/DT.png", format='png', bbox_inches='tight')
+    fig.savefig("Plots/DT.svg", format='svg', bbox_inches='tight')
 
 def plot_tsne(feature_vector, all_labels):
     """
@@ -343,7 +457,7 @@ def plot_tsne(feature_vector, all_labels):
     y = feature_vector_2d[:, 1]
 
     # create scatter plot to show where activities are embedded
-    sns.set_palette('Set1', n_colors=7)
+    #sns.set_palette('Set1', n_colors=7)
     #fig = plt.figure(figsize=[12, 12])
     #ax = fig.add_subplot(111, projection='3d')
     #ax.scatter(*zip(*feature_vector_2d))
@@ -355,9 +469,19 @@ def plot_tsne(feature_vector, all_labels):
     plt.show()
 
 def plot_features(X, all_labels):
-    sns.scatterplot(x=X.rms_acc_thigh, y=X.rms_acc_wrist, hue=all_labels)
-    plt.show()
-    print('test')
+    width = 13  # inches
+    golden_mean = (math.sqrt(5) - 1.0) / 2.0  # aesthetic ratio
+    height = width * golden_mean  # inches
+    plt.figure(figsize=(width, height))
+    sns.scatterplot(x=X.autocorr_ankle_10, y=X.rms_gyr_ankle, hue=all_labels, style=all_labels, s=80)
+    plt.xlabel('Autocorrelation acceleration ankle')
+    plt.ylabel('RMS value angular velocity ankle')
+    plt.savefig('Plots/featureplot1.pdf', format='pdf', bbox_inches='tight')
+    plt.figure(figsize=(width, height))
+    sns.scatterplot(x=X.mean_gyr_ankle, y=X.autocorr_ankle_10, hue=all_labels, style=all_labels, s=80)
+    plt.ylabel('Autocorrelation acceleration ankle')
+    plt.xlabel('Mean angular velocity ankle')
+    plt.savefig('Plots/featureplot2.pdf', format='pdf', bbox_inches='tight')
 
 def add_values(dataframe, subject_id, activity, timeseries_id, freq=100):
     """
@@ -424,7 +548,7 @@ def segmentation(df, TIME_PERIODS, STEP_DISTANCE):
 
     return all_segments, all_labels
 
-def show_confusion_matrix(validations, predictions, normalized=False):
+def plot_confusion_matrix(validations, predictions, normalized=False):
     """
     :param validations: list containing the true label of the activities
     :param predictions: the predicted labels by the model
@@ -432,15 +556,17 @@ def show_confusion_matrix(validations, predictions, normalized=False):
     :return: nothing, plots and saves a confusion matrix
     """
     matrix = confusion_matrix(validations, predictions)
+
     if normalized:
         matrix = normalize(matrix, axis=1, norm='l1')
         fmt = '.1%'
     else:
         fmt = 'd'
+
     width = 12  # inches
     golden_mean = (math.sqrt(5) - 1.0) / 2.0  # aesthetic ratio
     height = width * golden_mean  # inches
-    plt.figure(figsize=(width, height))
+    fig, ax = plt.subplots(figsize=(width, height))
     sns.heatmap(matrix,
                 cmap='coolwarm',
                 linecolor='white',
@@ -448,7 +574,8 @@ def show_confusion_matrix(validations, predictions, normalized=False):
                 xticklabels=['Downstairs', 'Jumping', 'Running', 'Sitting down', 'Standing up', 'Upstairs', 'Walking'],
                 yticklabels=['Downstairs', 'Jumping', 'Running','Sitting down', 'Standing up', 'Upstairs', 'Walking'],
                 annot=True,
-                fmt=fmt
+                fmt=fmt,
+                ax=ax
                 )
     plt.yticks(rotation=0)
     if normalized:
@@ -457,7 +584,7 @@ def show_confusion_matrix(validations, predictions, normalized=False):
         plt.title('Confusion Matrix')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
-    plt.savefig("Plots/confusionmatrixDT.png", format='png')
+    plt.savefig("Plots/confusionmatrixDT.pdf", format='pdf')
     plt.show()
 
 
@@ -524,19 +651,22 @@ def plot_feat_importances(feat_importances):
     :return: nothing, makes a barplot
     """
     feat_importances = sorted(feat_importances.items(), key=lambda x: x[1], reverse=True)  # rank importances descending
+    #print([x for x,_ in feat_importances])
     w = 12
     golden_mean = (math.sqrt(5) - 1.0) / 2.0  # aesthetic ratio
     h = w * golden_mean  # inches
     fig, ax = plt.subplots(figsize=(w,h))
     x, y = zip(*feat_importances)
     x, y = list(x), list(y)
-    sns.barplot(x=x[:], y=y[:])  # plot 10 most important features
+    sns.barplot(x=x[:], y=y[:])
     plt.setp(ax.xaxis.get_majorticklabels(), ha='right')
-    plt.title('Features ranked by importance')
+    plt.title('Features ordered according to importance')
     plt.xticks(rotation=45)
+    plt.ylabel('relative importance')
     plt.tight_layout()
+    plt.savefig('Plots/feature_importance.pdf', bbox_inches="tight", format='pdf')
     plt.show()
-    plt.savefig('Plots/feature_importance.png', bbox_inches="tight", format='png')
+
 
 def readOne(path, IDs, tp_id, trial, activity, freq):
     """
@@ -565,6 +695,9 @@ def readOne(path, IDs, tp_id, trial, activity, freq):
 
     return dataframe
 
+# ==========================================================================
+# ========================= MAIN FILE ======================================
+# ==========================================================================
 def main():
     # define sensor IDs
     ID1 = '00B42D71'  # Wrist
@@ -573,7 +706,7 @@ def main():
     IDs = [ID1, ID2, ID3]
     LABELS = ['Downstairs', 'Jumping', 'Running', 'Sitting', 'Standing', 'Upstairs', 'Walking']
 
-    # ------------------------ HYPER-PARAMETERS ---------------------------------------
+    # ========================= HYPER-PARAMETERS =========================
     # ---------parameters for reading in a single activity trail ---------------------
     # relative path containing the csv files, filenames follow template (see readme.md)
     path = r".\Data\Exported"
@@ -589,34 +722,34 @@ def main():
     # The steps to take from one segment to the next; if this value is equal to
     # TIME_PERIODS, then there is no overlap between the segments
     STEP_DISTANCE = 200
-    # ---------------evaluation method---------------------------------------------------
-    eval_method = 'L1O'  # 'L1O' or 'k-Fold' cross-validation
+    # -----------feature selection or pca feature reduction------------
+    feat_selection = False  # find best x features from all extracted
+    pca = False  # transform all extracted features into x principal components
+    # ---------------evaluation method---------------------------------
+    eval_method = 'L1O'  # 'L1O' or 'k-fold' cross-validation
 
+    # ========================= DATA READ / PRE-PROCESSING =========================
+    dataframe = preprocess(path, freq)  # read from path   # Read all csv files into one dataframe containing all activities
+    #df1 = readOne(path, IDs, tp_id=5, trial=2, activity='standing', freq=100)  # read single activity from 1 csv file into a dataframe
+    #df2 = readOne(path, IDs, tp_id=5, trial=2, activity='sitting', freq=100)  # read single activity from 1 csv file into a dataframe
 
-    # Read in csv files to one big dataframe containing all activities
-    dataframe = preprocess(path, freq)  # read from path
-    #df1 = readOne(path, IDs, tp_id=5, trial=2, activity='standing', freq=100)  # read single activity from 1 csv file
-    #df2 = readOne(path, IDs, tp_id=5, trial=2, activity='sitting', freq=100)  # read single activity from 1 csv file
-
-    #dataframe = pd.read_pickle("Data/data.pkl")  # read from saved pre-process dataframe file
-
-    #all_segments_df = pd.read_pickle("Data/all_segments.pkl")
+    #dataframe = pd.read_pickle("Data/data.pkl")  # read from saved pre-processed dataframe file to speed up the process
     print("XSens data imported correctly")
 
     # save and export read data
     #dataframe.to_pickle("Data/data.pkl")  # save the dataframe
     #dataframe.to_csv("Data/processed_data.csv", index=False)
 
-    # output some info
+    # output some information
     #show_df_info(dataframe)  # basic info
     #print(dataframe['Subject-id'].value_counts(normalize='True')) # data distribution along the subjects
 
-    # plot some activities
+    # plot some values from an activity
     #df1 = dataframe.loc[dataframe['Timeseries-id'] == 12]
     #plot(df1)
     #plot_comparison(df1, df2)
 
-
+    # ========================= SEGMENTATION =========================
     # segmentation of the data in time windows
     all_segments, all_labels = segmentation(dataframe, TIME_PERIODS, STEP_DISTANCE)
     print('%i seconds of activity divided in %i segments of %.1f seconds' % ((len(dataframe)//100), len(all_segments), TIME_PERIODS/freq))
@@ -624,62 +757,71 @@ def main():
 
     all_segments_df = pd.concat(all_segments, ignore_index=True)  # put all segments back in a dataframe
 
-    # filter to keep only certain activities (for testing)
+    # filter to keep only certain activities (for testing purpose)
     #all_segments_df = all_segments_df[(all_segments_df['Activity'] == 'standing') | (all_segments_df['Activity'] == 'sitting')]
     #all_segments_df = all_segments_df.loc[all_segments_df['Activity'] == 'standing']
     #all_segments_df = all_segments_df.loc[all_segments_df['Activity'] == 'sitting']
-
-    #segment = all_segments[113]
-    #plot(segment)
 
     # get each segment
     segments = all_segments_df.groupby('Segment-id')
     all_labels = np.array(all_labels)
     groups = []
-    # make list of subject-ids to make groups for cv
+    # make list of the subject corresponding to each segment to make groups for cross validation
     for segment_name, segment in segments:
-        subject = segment["Subject-id"].iloc[0]  #find the subject of each segment
+        subject = segment["Subject-id"].iloc[0]  # find the subject-id of each segment
         groups.append(subject)
 
-    # ------------------ FEATURE EXTRACTION -----------------------
+    # ==================== FEATURE EXTRACTION =========================
     print('features are extracted from the segments...')
     # X is the vector containing all feature values
     # automatic feature extraction with tsfresh or handcrafted features
-    #X = auto_feat_extract(all_segments_df)
+    #X = auto_feat_extract(all_segments_df, all_labels)
     X, all_labels = feat_extract(all_segments_df, 'set1')
 
+    # plot some feature values for each activity
     #plot_features(X, all_labels)
-
-    # exploratory data analysis
     # visualization of the features in 2D
     #plot_tsne(X, all_labels)
     print('Done')
 
-    # -------------------- FEATURE SELECTION --------------------------
-    """"rf = RandomForestClassifier(n_estimators=10, max_depth=20, n_jobs=-1)
-    kn = KNeighborsClassifier(n_neighbors=3)
-    n_features = 10
-    sfs = SequentialFeatureSelector(kn, n_features_to_select=n_features)
-    sfs.fit(X, all_labels)
-    print(f"Top {n_features} features selected by forward sequential selection:{list(X.columns[sfs.get_support()])}")"""
+    # ===================== FEATURE SELECTION =======================
+    if feat_selection:
+        print('Feature selection... (takes a while to run)')
+        #rf = RandomForestClassifier(n_estimators=50, max_depth=20, n_jobs=-1)
+        kn = KNeighborsClassifier(n_neighbors=3)
+        n_features = 20
+        sfs = SequentialFeatureSelector(kn, n_features_to_select=n_features, direction='forward')
+        sfs.fit(X, all_labels)  # reduce to most important features
+        columns = list(X.columns[sfs.get_support()])
+        print(f"Top {n_features} features selected by forward sequential selection:{list(X.columns[sfs.get_support()])}")
+        # transform feature vector to selected features
+        X = pd.DataFrame(sfs.transform(X), columns=columns)
+        print(X.shape)
 
-    # ----------- NORMALIZATION/STANDARDIZATION---------------
-    X['Subject-id'] = groups  # add column with subject-id for subject-level normalization/standardization
+    # ================NORMALIZATION/STANDARDIZATION===============
+    X['Subject-id'] = groups  # add column to feature table with subject-id for subject-level normalization/standardization
     X = standardize_subject_features(X)
-    print('Features are normalized')
+    print('Features are standardized')
 
-    # ------------------- PCA --------------------------------------
-    """# standardization needed with PCA
-    n = 30  # number of features to reduce to
-    pca = PCA(n_components=n)
-    print(f'features reduced to {n} components')
-    X = pd.DataFrame(pca.fit_transform(X))"""
+    # ========================== PCA ============================
+    if pca:
+        n = 20   # number of features to reduce to
+        pca = PCA(n_components=n)
+        print(f'features reduced to {n} components')
+        X = pd.DataFrame(pca.fit_transform(X))
 
-    # ------------- CLASSIFICATION AND CROSS-VALIDATION -------------
+    # ============ CLASSIFICATION AND CROSS-VALIDATION ============
     # variables to keep track of general accuracy
     all_y_test = []
     all_predicted_y = []
     sum_feat_importances = {}
+    # variables to keep track of training and classification times
+    trainingtimes = []
+    predictiontimes = []
+    # parameters to try out for grid search parameter tuning
+    parameters = [{'n_estimators': [5,10,50,100],
+                    'max_depth': [5,10,20,30],
+                   'criterion': ['gini', 'entropy']}]
 
     if eval_method == 'L1O':
         print('Leave-One-Out-Cross-Validation')
@@ -691,25 +833,37 @@ def main():
             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
             y_train, y_test = all_labels[train_index], all_labels[test_index]
             y_train, y_test = y_train.tolist(), y_test.tolist()
-            #print('train labels', *y_train)
-            #clf = svm.SVC(kernel='rbf', probability=True, decision_function_shape='ovo')
-            #clf = svm.LinearSVC(max_iter=10000)
-            #clf = DecisionTreeClassifier(criterion='gini')
+            # uncomment the classifier to use
+            #clf = svm.SVC(kernel='linear', probability=True, decision_function_shape='ovo')
+            #clf = svm.LinearSVC(max_iter=10000)  # optimized implementation of linear SVM classifier
+            #clf = DecisionTreeClassifier(criterion='entropy')
             clf = RandomForestClassifier(max_depth=20)
             #clf = GaussianNB(priors=[0.192, 0.032,0.18,0.021,0.021,0.211,0.343])
             #clf = MLPClassifier(random_state=1, max_iter=300)
             #clf = GradientBoostingClassifier(n_estimators=20)
-            #clf = KNeighborsClassifier(n_neighbors=5)
+            #clf = KNeighborsClassifier(n_neighbors=3)
+
+            # Find optimal parameters with Grid search (for testing purpose)
+            #clf = GridSearchCV(RandomForestClassifier(), parameters, scoring='f1_macro')
+
+            start = time.time()
             clf.fit(X_train, y_train)
+            end = time.time()
+            trainingtimes.append((end-start))
+            start = time.time()
             predicted_y = clf.predict(X_test)
+            end = time.time()
+            predictiontimes.append((end-start))
+
             all_y_test.extend(y_test)
             all_predicted_y.extend(predicted_y)
 
             report = classification_report(y_test, predicted_y, output_dict=True)
-            print('> weighted average precision: %.2f' % report.get('weighted avg').get('precision'))
-            #show_confusion_matrix(y_test, predicted_y, normalized=False)
+            #print('> average precision: %.2f' % report.get('macro avg').get('precision'))
+            print('> average f1-score: %.2f' % report.get('macro avg').get('f1-score'))
+            #plot_confusion_matrix(y_test, predicted_y, normalized=False)
             feat_importances = calc_feat_importances(X_train, clf)  # calculates and plots the feature importances
-            sum_feat_importances = Counter(sum_feat_importances) + Counter(feat_importances)  # accumulate feature importances
+            sum_feat_importances = Counter(sum_feat_importances) + Counter(feat_importances)  # accumulate feature importances over different iterations
 
     if eval_method == 'k-fold':
         print('K-fold Cross-Validation')
@@ -718,29 +872,43 @@ def main():
             print('fold number %i : ' % i_fold)
             X_train, X_test = X.iloc[tr], X.iloc[tst]
             y_train, y_test = all_labels[tr], all_labels[tst]
-            #clf = DecisionTreeClassifier(criterion='gini')
-            clf = RandomForestClassifier(max_depth=20)
+            # uncomment the classifier to use
+            #clf = DecisionTreeClassifier(criterion='entropy')
+            #clf = RandomForestClassifier(max_depth=20)
             #clf = KNeighborsClassifier(n_neighbors=3)
+            clf = svm.LinearSVC(max_iter=10000)
             #clf = svm.SVC(kernel='linear', decision_function_shape='ovo', C=1)
             #clf = GaussianNB(priors=[0.192, 0.032,0.18,0.021,0.021,0.211,0.343])
+            #clf = MLPClassifier(random_state=1, max_iter=300)
+
+            start = time.time()
             clf.fit(X_train, y_train)
+            end = time.time()
+            trainingtimes.append((end-start))
+            start = time.time()
             predicted_y = clf.predict(X_test)
+            end = time.time()
+            predictiontimes.append((end-start))
             all_y_test.extend(y_test)
             all_predicted_y.extend(predicted_y)
 
             report = classification_report(y_test, predicted_y, output_dict=True)
-            print('> weighted average precision: %.2f' % report.get('weighted avg').get('precision'))
-            #show_confusion_matrix(y_test, predicted_y, normalized=False)
+            #print('> average precision: %.2f' % report.get('macro avg').get('precision'))
+            print('> average f1-score: %.2f' % report.get('macro avg').get('f1-score'))
+            #plot_confusion_matrix(y_test, predicted_y, normalized=False)
             #feat_importances = calc_feat_importances(X_train, clf)  # calculates and plots the feature importances
             #sum_feat_importances = Counter(sum_feat_importances) + Counter(feat_importances)  # accumulate feature importances
 
+    # print information of the classification (for testing)
+    print('average training times: ', (sum(trainingtimes)/len(trainingtimes)))
+    print('average prediction times: ', (sum(predictiontimes)/len(predictiontimes)))
+    #print('best params: ', clf.best_params_)
+    #plot_DT(clf, X, dataframe)  # plot visual representation for a DT classifier
+    plot_feat_importances(sum_feat_importances)  # plot accumulated feat. importances of the trained model
 
     # report general accuracy of the model
     print(classification_report(all_y_test, all_predicted_y))
-    show_confusion_matrix(all_y_test, all_predicted_y, normalized=False)
-
-    #plot_DT(clf, X, dataframe)  # plot visual representation a DT classifier
-    plot_feat_importances(sum_feat_importances)  # plot accumulated feat. importances of each trained model
+    plot_confusion_matrix(all_y_test, all_predicted_y, normalized=True)
 
     print('Data processed correctly')
     print('............................................................')
@@ -748,61 +916,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    # DRAFT
-
-    # train-test split
-    """
-
-    # Decision tree
-    clf = DecisionTreeClassifier(criterion='gini')
-    # Random forest
-    #clf = RandomForestClassifier(max_depth=20)
-    # Nearest neighbours
-    #clf = KNeighborsClassifier(n_neighbors=3)
-    # Support Vector Machine
-    #clf = svm.SVC(kernel='linear', decision_function_shape='ovo', C=1)
-
-    clf.fit(X_train, y_train)
-    
-    # model evaluation
-    #print(classification_report(y_test, clf.predict(X_test)))
-    #show_confusion_matrix(y_test, clf.predict(X_test))
-
-    """
-    # fft transform
-    """
-    _, axes = plt.subplots(3, 1, figsize=(10, 8))
-    yf_wrist = rfft(np.array(segment['Acc_norm_wrist']))
-    maximum = max((np.abs(yf_wrist[1:])))
-    print("max", maximum)
-    yf_thigh = rfft(np.array(segment['Acc_norm_thigh']))
-    yf_ankle = rfft(np.array(segment['Acc_norm_ankle']))
-    xf = rfftfreq(400, (1/freq))
-    print(len(xf))
-    axes[0].stem(xf[:], np.abs(yf1[:]), '-.')
-    axes[1].stem(xf[:], np.abs(yf2[:]),'-.')
-    axes[2].stem(xf[:], np.abs(yf3[:]),'-.')
-    plt.show()
-
-    """
-    """
-            # normalization of the features
-        min = dataframe[f"FreeAcc_norm_{bodypart}"].min()
-        max = dataframe[f"FreeAcc_norm_{bodypart}"].max()
-        dataframe[f"FreeAcc_norm_{bodypart}"] = [normalize(x, min, max) for x in dataframe[f"FreeAcc_norm_{bodypart}"]]
-        dataframe[f"Gyr_norm_{bodypart}"] = [normalize(x, min, max) for x in dataframe[f"Gyr_norm_{bodypart}"]
-    
-    """
-    # quaternion stuff
-    """
-    quaternions = df1[['Quat_q0_thigh','Quat_q1_thigh','Quat_q2_thigh','Quat_q3_thigh']]
-    quat1 = quaternions.iloc[0].values
-    quat2 = quaternions.iloc[100].values
-    print(quat1)
-    print(quat2)
-    multi_quat = quaternion_multiply(quat1, quat2)
-    print(multi_quat)
-    """
-
-
