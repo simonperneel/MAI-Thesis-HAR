@@ -24,7 +24,7 @@ This repository contains a set of tools and libraries to access Xsens MTw data f
 ```git clone https://github.com/simonperneel/MAI-Thesis-HAR ``` 
 
 2. Required packages and there versions  for running the code are listed in ```requirements.txt```. They can easily be installed with conda in a virtual environment with following command in the terminal: \
-```conda create --name <envname> --file requirements.txt``` \
+```conda create --name <envname> --file requirements.txt``` 
 
 3. Activate the enviromnent for running the python code: \
 ```conda activate <envname>```
