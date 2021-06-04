@@ -5,7 +5,7 @@
     script to load MTw XSens generated csv file into a dataframe,
     divide the time series IMU data in time windows,
     add and select good features from it,
-    classify the activities using a supervised learning algorithm
+    classify the activities using a learning algorithm
     and evaluate the model
 
 		Author: Simon Perneel - simon.perneel@hotmail.com
@@ -56,7 +56,7 @@ import utils
 def show_df_info(df):
     """
     :param df: dataframe to print some information of
-    :return: nothing, just print some information
+    :return: nothing, only print some information
     """
     pd.set_option('display.max_columns', None)
     print('First row of the data table: ')
@@ -133,21 +133,21 @@ def feat_extract(all_segments_df, feature_set):
                         # statistical features
                         #kurtosis_acc_wrist=('FreeAcc_norm_wrist', lambda x: kurtosis(x)),
                         #kurtosis_acc_thigh=('FreeAcc_norm_thigh', lambda x: kurtosis(x)),
-                        kurtosis_acc_ankle=('FreeAcc_norm_ankle', lambda x: kurtosis(x)),
+                        #kurtosis_acc_ankle=('FreeAcc_norm_ankle', lambda x: kurtosis(x)),
                         #kurtosis_gyr_wrist=('Gyr_norm_wrist', lambda x: kurtosis(x)),
                         #kurtosis_gyr_thigh=('Gyr_norm_thigh', lambda x: kurtosis(x)),
                         #kurtosis_gyr_ankle=('Gyr_norm_ankle', lambda x: kurtosis(x)),
                         #skew_acc_wrist=('FreeAcc_norm_wrist', lambda x: skew(x)),
                         skew_acc_thigh=('FreeAcc_norm_thigh', lambda x: skew(x)),
-                        skew_acc_ankle=('FreeAcc_norm_ankle', lambda x: skew(x)),
+                        #skew_acc_ankle=('FreeAcc_norm_ankle', lambda x: skew(x)),
                         #skew_gyr_wrist=('Gyr_norm_wrist', lambda x: skew(x)),
-                        #skew_gyr_thigh=('Gyr_norm_thigh', lambda x: skew(x)),
+                        skew_gyr_thigh=('Gyr_norm_thigh', lambda x: skew(x)),
                         #skew_gyr_ankle=('Gyr_norm_ankle', lambda x: skew(x)),
                         mean_acc_wrist=('Acc_norm_wrist', lambda x: mean(x)),
-                        mean_acc_thigh=('Acc_norm_thigh', lambda x: mean(x)),
+                        #mean_acc_thigh=('Acc_norm_thigh', lambda x: mean(x)),
                         #mean_acc_ankle=('Acc_norm_ankle', lambda x: mean(x)),
                         #mean_gyr_wrist=('Gyr_norm_wrist', lambda x: mean(x)),
-                        mean_gyr_thigh=('Gyr_norm_thigh', lambda x: mean(x)),
+                        #mean_gyr_thigh=('Gyr_norm_thigh', lambda x: mean(x)),
                         mean_gyr_ankle=('Gyr_norm_ankle', lambda x: mean(x)),
                         std_acc_wrist=('Acc_norm_wrist', lambda x: np.std(x)),
                         std_acc_thigh=('Acc_norm_thigh', lambda x: np.std(x)),
@@ -168,14 +168,14 @@ def feat_extract(all_segments_df, feature_set):
                         #rms_gyr_wrist=('Gyr_norm_wrist', lambda x: np.sqrt(mean(x)**2)),
                         rms_gyr_thigh=('Gyr_norm_thigh', lambda x: np.sqrt(mean(x)**2)),
                         rms_gyr_ankle=('Gyr_norm_ankle', lambda x: np.sqrt(mean(x)**2)),
-                        autocorr_acc_wrist_10=('Acc_norm_wrist', lambda x: x.autocorr(lag=10)),
+                        #autocorr_acc_wrist_10=('Acc_norm_wrist', lambda x: x.autocorr(lag=10)),
                         #autocorr_acc_thigh_10=('Acc_norm_thigh', lambda x: x.autocorr(lag=10)),
                         autocorr_acc_ankle_10=('Acc_norm_ankle', lambda x: x.autocorr(lag=10)),
                         autocorr_gyr_wrist_10=('Gyr_norm_wrist', lambda x: x.autocorr(lag=10)),
                         autocorr_gyr_thigh_10=('Gyr_norm_thigh', lambda x: x.autocorr(lag=10)),
                         #autocorr_gyr_ankle_10=('Gyr_norm_ankle', lambda x: x.autocorr(lag=10)),
                         #variance_acc_wrist=('FreeAcc_norm_wrist', lambda x: np.var(x)),
-                        #variance_acc_thigh=('FreeAcc_norm_thigh', lambda x: np.var(x)),
+                        variance_acc_thigh=('FreeAcc_norm_thigh', lambda x: np.var(x)),
                         #variance_acc_ankle=('FreeAcc_norm_ankle', lambda x: np.var(x)),
                         #variance_gyr_wrist=('Gyr_norm_wrist', lambda x: np.var(x)),
                         #variance_gyr_thigh=('Gyr_norm_thigh', lambda x: np.var(x)),
@@ -204,7 +204,7 @@ def feat_extract(all_segments_df, feature_set):
                         # label
                         label=('Activity', 'first'),
                     )
-        # additional orientation feature, calculated with apply function
+        # 3 additional orientation feature, for distinguishing between standing up/ sitting down
         Y = all_segments_df.groupby('Segment-id').apply(lambda x: orientation_difference(x, 'thigh'))
 
     if feature_set == 'magnetometer':
@@ -246,7 +246,7 @@ def feat_extract(all_segments_df, feature_set):
             rms_mag_Z_thigh=('Mag_Z_thigh', lambda x: np.sqrt(mean(x)**2)),
             rms_mag_X_ankle=('Mag_X_ankle', lambda x: np.sqrt(mean(x)**2)),
             rms_mag_Y_ankle=('Mag_Y_ankle', lambda x: np.sqrt(mean(x)**2)),
-            rms_mag_Z_ankle=('Mag_Z_ankle', lambda x: np.sqrt(mean(x)**2)),
+            rms_mag_Zg_ankle=('Mag_Z_ankle', lambda x: np.sqrt(mean(x)**2)),
             mean_mag_X_ankle=('Mag_X_ankle', lambda x: mean(x)),
             mean_mag_Y_ankle=('Mag_Y_ankle', lambda x: mean(x)),
             mean_mag_Z_ankle=('Mag_Z_ankle', lambda x: mean(x)),
@@ -373,7 +373,7 @@ def standardize_subject_features(X):
 def plot(dataframe):
     """
     :param dataframe: contains time-series data from one activity trial
-    :return: nothing, just plots some features of the timeseries data
+    :return: nothing, only plots some features of the timeseries data
     """
     width = 15  # inches
     golden_mean = (math.sqrt(5) - 1.0) / 2.0  # aesthetic ratio
@@ -473,14 +473,14 @@ def plot_features(X, all_labels):
     golden_mean = (math.sqrt(5) - 1.0) / 2.0  # aesthetic ratio
     height = width * golden_mean  # inches
     plt.figure(figsize=(width, height))
-    sns.scatterplot(x=X.autocorr_ankle_10, y=X.rms_gyr_ankle, hue=all_labels, style=all_labels, s=80)
+    sns.scatterplot(x=X.autocorr_acc_ankle_10, y=X.rms_gyr_ankle, hue=all_labels, style=all_labels, s=150)
     plt.xlabel('Autocorrelation acceleration ankle')
     plt.ylabel('RMS value angular velocity ankle')
     plt.savefig('Plots/featureplot1.pdf', format='pdf', bbox_inches='tight')
     plt.figure(figsize=(width, height))
-    sns.scatterplot(x=X.mean_gyr_ankle, y=X.autocorr_ankle_10, hue=all_labels, style=all_labels, s=80)
+    sns.scatterplot(x=X.std_acc_wrist, y=X.rms_gyr_ankle, hue=all_labels, style=all_labels, s=150)
     plt.ylabel('Autocorrelation acceleration ankle')
-    plt.xlabel('Mean angular velocity ankle')
+    plt.xlabel('Standard deviation acceleration wrist')
     plt.savefig('Plots/featureplot2.pdf', format='pdf', bbox_inches='tight')
 
 def add_values(dataframe, subject_id, activity, timeseries_id, freq=100):
@@ -490,7 +490,7 @@ def add_values(dataframe, subject_id, activity, timeseries_id, freq=100):
     :param activity: activity label of the trial to be added
     :param timeseries_id: to be added, to identify a trial
     :param freq: sample frequency of the measurements
-    :return: nothing, just adds information to the passed dataframe
+    :return: nothing, only adds information to the passed dataframe
     """
     # add new columns to the existing Dataframe
     # for each body part
@@ -790,7 +790,7 @@ def main():
         #rf = RandomForestClassifier(n_estimators=50, max_depth=20, n_jobs=-1)
         kn = KNeighborsClassifier(n_neighbors=3)
         n_features = 20
-        sfs = SequentialFeatureSelector(kn, n_features_to_select=n_features, direction='forward')
+        sfs = SequentialFeatureSelector(kn, n_features_to_select=n_features, direction='forward', scoring='average_precision')
         sfs.fit(X, all_labels)  # reduce to most important features
         columns = list(X.columns[sfs.get_support()])
         print(f"Top {n_features} features selected by forward sequential selection:{list(X.columns[sfs.get_support()])}")
@@ -828,16 +828,16 @@ def main():
         logo = LeaveOneGroupOut()
         for i_fold, (train_index, test_index) in enumerate(logo.split(X, all_labels, groups=groups)):
             print('Subject %i left out of training set and used as test set' % (i_fold+1))
-            #print("TRAIN", train_index, "TEST", test_index)
+            #print("indices train ", train_index, "indices test", test_index)
             #print("train samples: ", len(train_index), ", test samples: ", len(test_index))
             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
             y_train, y_test = all_labels[train_index], all_labels[test_index]
             y_train, y_test = y_train.tolist(), y_test.tolist()
-            # uncomment the classifier to use
-            #clf = svm.SVC(kernel='linear', probability=True, decision_function_shape='ovo')
+            #print('train labels', *y_train)
+            clf = svm.SVC(kernel='linear', probability=True, decision_function_shape='ovo')
             #clf = svm.LinearSVC(max_iter=10000)  # optimized implementation of linear SVM classifier
             #clf = DecisionTreeClassifier(criterion='entropy')
-            clf = RandomForestClassifier(max_depth=20)
+            #clf = RandomForestClassifier(max_depth=20)
             #clf = GaussianNB(priors=[0.192, 0.032,0.18,0.021,0.021,0.211,0.343])
             #clf = MLPClassifier(random_state=1, max_iter=300)
             #clf = GradientBoostingClassifier(n_estimators=20)
@@ -862,8 +862,8 @@ def main():
             #print('> average precision: %.2f' % report.get('macro avg').get('precision'))
             print('> average f1-score: %.2f' % report.get('macro avg').get('f1-score'))
             #plot_confusion_matrix(y_test, predicted_y, normalized=False)
-            feat_importances = calc_feat_importances(X_train, clf)  # calculates and plots the feature importances
-            sum_feat_importances = Counter(sum_feat_importances) + Counter(feat_importances)  # accumulate feature importances over different iterations
+            #feat_importances = calc_feat_importances(X_train, clf)  # calculates and plots the feature importances
+            #sum_feat_importances = Counter(sum_feat_importances) + Counter(feat_importances)  # accumulate feature importances over different iterations
 
     if eval_method == 'k-fold':
         print('K-fold Cross-Validation')
@@ -872,7 +872,6 @@ def main():
             print('fold number %i : ' % i_fold)
             X_train, X_test = X.iloc[tr], X.iloc[tst]
             y_train, y_test = all_labels[tr], all_labels[tst]
-            # uncomment the classifier to use
             #clf = DecisionTreeClassifier(criterion='entropy')
             #clf = RandomForestClassifier(max_depth=20)
             #clf = KNeighborsClassifier(n_neighbors=3)
@@ -904,7 +903,7 @@ def main():
     print('average prediction times: ', (sum(predictiontimes)/len(predictiontimes)))
     #print('best params: ', clf.best_params_)
     #plot_DT(clf, X, dataframe)  # plot visual representation for a DT classifier
-    plot_feat_importances(sum_feat_importances)  # plot accumulated feat. importances of the trained model
+    #plot_feat_importances(sum_feat_importances)  # plot accumulated feat. importances of the trained model
 
     # report general accuracy of the model
     print(classification_report(all_y_test, all_predicted_y))

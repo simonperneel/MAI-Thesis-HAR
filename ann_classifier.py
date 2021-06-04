@@ -1,7 +1,8 @@
 """
-    time series classification with neural nets
-    Multi-layer perceptron architecture
-    no feature extraction - classification on 'raw' data
+    end-to-end classifier for time series classification
+    implementation of a MLP architecture
+    no feature extraction with this approach,
+    feature learning and classification incorporated in one model
 
     Author: Simon Perneel - simon.perneel@hotmail.com
 """
@@ -102,7 +103,7 @@ def make_model(input_shape, num_classes):
   model_m.add(Dense(100, activation='relu'))
   model_m.add(Dense(100, activation='relu'))
   model_m.add(Dense(100, activation='relu'))
-  model_m.add(Flatten())
+  model_m.add(Flatten())    
   model_m.add(Dense(num_classes, activation='softmax'))
   #print(model_m.summary())  # print layers
   model_m.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -175,102 +176,106 @@ def show_confusion_matrix(validations, predictions, normalized=False):
 
 
 def main():
-  # Set some standard parameters upfront
-  pd.options.display.float_format = '{:.1f}'.format
-  pd.set_option('display.max_columns', None)
-  sns.set()  # Default seaborn look and feel
-  plt.style.use('ggplot')
-  print('keras version ', keras.__version__)
+    # Set some standard parameters upfront
+    pd.options.display.float_format = '{:.1f}'.format
+    pd.set_option('display.max_columns', None)
+    sns.set()  # Default seaborn look and feel
+    plt.style.use('ggplot')
+    print('keras version ', keras.__version__)
 
-  # load the preprocessed data from LoadXSens.py
-  df = pd.read_pickle("Data/data.pkl")  # enter filename
-  # output first lines of the dataset
-  # print(df.head())
+    # load the preprocessed data from LoadXSens.py
+    df = pd.read_pickle("Data/data.pkl")  # enter filename
+    # output first lines of the dataset
+    # print(df.head())
 
-  # Define column name of the label vector
-  LABEL = 'ActivityEncoded'
-  # Transform the labels from String to Integer via LabelEncoder
-  le = LabelEncoder()
-  # Add new column to the existing DataFrame with the encoded values
-  df[LABEL] = le.fit_transform(df['Activity'].values.ravel())
-  #print(df.head())
+    # Define column name of the label vector
+    LABEL = 'ActivityEncoded'
+    # Transform the labels from String to Integer via LabelEncoder
+    le = LabelEncoder()
+    # Add new column to the existing DataFrame with the encoded values
+    df[LABEL] = le.fit_transform(df['Activity'].values.ravel())
+    #print(df.head())
 
-  # normalize features for training data set (values between 0 and 1)
-  # surpress warning
-  pd.options.mode.chained_assignment = None
-  df["FreeAcc_norm_wrist"] = df["FreeAcc_norm_wrist"] / df["FreeAcc_norm_wrist"].max()
-  df["FreeAcc_norm_ankle"] = df["FreeAcc_norm_ankle"] / df["FreeAcc_norm_ankle"].max()
-  df["FreeAcc_norm_thigh"] = df["FreeAcc_norm_thigh"] / df["FreeAcc_norm_thigh"].max()
-  df["Gyr_norm_wrist"] = df["Gyr_norm_wrist"] / df["Gyr_norm_wrist"].max()
-  df["Gyr_norm_ankle"] = df["Gyr_norm_ankle"] / df["Gyr_norm_ankle"].max()
-  df["Gyr_norm_thigh"] = df["Gyr_norm_thigh"] / df["Gyr_norm_thigh"].max()
+    # normalize features for training data set (values between 0 and 1)
+    # surpress warning
+    pd.options.mode.chained_assignment = None
+    df["FreeAcc_norm_wrist"] = df["FreeAcc_norm_wrist"] / df["FreeAcc_norm_wrist"].max()
+    df["FreeAcc_norm_ankle"] = df["FreeAcc_norm_ankle"] / df["FreeAcc_norm_ankle"].max()
+    df["FreeAcc_norm_thigh"] = df["FreeAcc_norm_thigh"] / df["FreeAcc_norm_thigh"].max()
+    df["Gyr_norm_wrist"] = df["Gyr_norm_wrist"] / df["Gyr_norm_wrist"].max()
+    df["Gyr_norm_ankle"] = df["Gyr_norm_ankle"] / df["Gyr_norm_ankle"].max()
+    df["Gyr_norm_thigh"] = df["Gyr_norm_thigh"] / df["Gyr_norm_thigh"].max()
 
-  # round numbers
-  df = df.round({"FreeAcc_norm_ankle": 8, "FreeAcc_norm_wrist": 8, "FreeAcc_norm_thigh": 8})
-  df = df.round({"Gyr_norm_ankle": 8, "Gyr_norm_wrist": 8, "Gyr_norm_thigh": 8})
+    # round numbers
+    df = df.round({"FreeAcc_norm_ankle": 8, "FreeAcc_norm_wrist": 8, "FreeAcc_norm_thigh": 8})
+    df = df.round({"Gyr_norm_ankle": 8, "Gyr_norm_wrist": 8, "Gyr_norm_thigh": 8})
 
-  # Segmentation of the data
-  timeseries = df.groupby('Timeseries-id')  # get each trial and divide in segments
+    # Segmentation of the data
+    timeseries = df.groupby('Timeseries-id')  # get each trial and divide in segments
 
-  #x_tr, y_tr, x_test, y_test = [], [], [], []
-  X = []
-  all_labels = []
-  subjects = []
+    #x_tr, y_tr, x_test, y_test = [], [], [], []
+    X = []
+    all_labels = []
+    subjects = []
 
-  for i in range(len(timeseries)):
-    one_timeseries = timeseries.get_group(i)       # get an activity trial to divide in segments
-    # return divided segments, their label and the id of the subject
-    segments, labels, subject = create_segments(one_timeseries, TIME_PERIODS, STEP_DISTANCE, LABEL)
-    X.extend(segments)
-    all_labels.extend(labels)
-    subjects.extend(subject)
+    for i in range(len(timeseries)):
+        one_timeseries = timeseries.get_group(i)       # get an activity trial to divide in segments
+        # return divided segments, their label and the id of the subject
+        segments, labels, subject = create_segments(one_timeseries, TIME_PERIODS, STEP_DISTANCE, LABEL)
+        X.extend(segments)
+        all_labels.extend(labels)
+        subjects.extend(subject)
 
-  print('%i seconds of activity divided in %i segments of %.1f seconds' % (len(df), len(X), TIME_PERIODS/100))
-  print("segments have %i %% overlap" % ((1-STEP_DISTANCE/TIME_PERIODS)*100))
+    print('%i seconds of activity divided in %i segments of %.1f seconds' % (len(df), len(X), TIME_PERIODS/100))
+    print("segments have %i %% overlap" % ((1-STEP_DISTANCE/TIME_PERIODS)*100))
 
-  X = np.asarray(X)
-  all_labels = np.asarray(all_labels)
-  subjects = np.asarray(subjects)
+    X = np.asarray(X)
+    all_labels = np.asarray(all_labels)
+    subjects = np.asarray(subjects)
 
-  print('x shape: ', X.shape)
-  print(X.shape[0], 'training samples')
-  print('y shape: ', all_labels.shape)
+    print('x shape: ', X.shape)
+    print(X.shape[0], 'training samples')
+    print('y shape: ', all_labels.shape)
 
-  num_time_periods, num_sensors = X.shape[1], X.shape[2]
-  print('num time periods: ', num_time_periods)
-  print('num sensors:', num_sensors)
-  num_classes = le.classes_.size
-  print('activity classes', list(le.classes_))
+    num_time_periods, num_sensors = X.shape[1], X.shape[2]
+    print('num time periods: ', num_time_periods)
+    print('num sensors:', num_sensors)
+    num_classes = le.classes_.size
+    print('activity classes', list(le.classes_))
 
-  input_shape = (num_time_periods * num_sensors)
+    input_shape = (num_time_periods * num_sensors)
 
-  # reshape to flattened representation of time slices as input to neural net
-  X = X.reshape(X.shape[0], input_shape)
-  print('x shape: ', X.shape)
-  print('input shape: ', input_shape)
+    # reshape to flattened representation of time slices as input to neural net
+    X = X.reshape(X.shape[0], input_shape)
+    print('x shape: ', X.shape)
+    print('input shape: ', input_shape)
 
-  X = X.astype('float32')
-  all_labels = all_labels.astype('float32')
+    X = X.astype('float32')
+    all_labels = all_labels.astype('float32')
 
-  # one hot encoding of the labels
-  y_hot = np_utils.to_categorical(all_labels, num_classes)
-  #print(y_hot, 'y hot')
-  print('New y shape:', y_hot.shape)
+    # one hot encoding of the labels
+    y_hot = np_utils.to_categorical(all_labels, num_classes)
+    #print(y_hot, 'y hot')
+    print('New y shape:', y_hot.shape)
 
-  # Hyper-parameters
-  BATCH_SIZE = 64  # amount of samples that will be propagated trough the network
-  EPOCHS = 20  # Max amount of epochs
-  acc_per_fold, loss_per_fold = [], []
-  all_test_y, all_predicted_y = [], []
+    # Hyper-parameters
+    BATCH_SIZE = 64  # amount of samples that will be propagated trough the network
+    EPOCHS = 20  # Max amount of epochs
+    acc_per_fold, loss_per_fold = [], []
+    all_test_y, all_predicted_y = [], []
 
-  callbacks_list = [
+    callbacks_list = [
     keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=2)
-  ]
+    ]
 
-  # -------------------------------------------------------------------
-  #                   TRAIN AND EVALUATE NET
-  # -------------------------------------------------------------------
-  if EVAL_METHOD == 'k-fold':
+    # variables to keep track of training and classification times
+    trainingtimes = []
+    predictiontimes = []
+
+    # -------------------------------------------------------------------
+    #                   TRAIN AND EVALUATE NET
+    # -------------------------------------------------------------------
+    if EVAL_METHOD == 'k-fold':
       k_fold = KFold(n_splits=10, shuffle=True)
       print('10-fold cross validation')
       for i_fold, (tr, tst) in enumerate(k_fold.split(X, y_hot)):
@@ -281,6 +286,7 @@ def main():
 
           model_m = make_model(input_shape, num_classes)
 
+          start = time.time()
           history = model_m.fit(x=X_train,
                                 y=y_train,
                                 batch_size=BATCH_SIZE,
@@ -289,8 +295,13 @@ def main():
                                 validation_data=(X_test, y_test),  # test data to validate
                                 #validation_split=0.2,
                                 verbose=0)
+          end = time.time()
+          trainingtimes.append((end-start))
 
+          start = time.time()
           y_pred_test = model_m.predict(X_test)
+          end = time.time()
+          predictiontimes.append((end-start))
 
           # take class with highest probability from the test predictions
           max_y_pred_test = np.argmax(y_pred_test, axis=1)
@@ -309,8 +320,7 @@ def main():
           K.clear_session()
           reset_seeds()
 
-
-  if EVAL_METHOD == 'L1O':
+    if EVAL_METHOD == 'L1O':
       logo = LeaveOneGroupOut()
       print('Leave-One-Subject-Out cross validation')
       for i_fold, (tr, tst) in enumerate(logo.split(X, y_hot, groups=subjects)):
@@ -320,6 +330,7 @@ def main():
             y_train, y_test = y_hot[tr], y_hot[tst]
 
             model_m = make_model(input_shape, num_classes)
+            start = time.time()
             history = model_m.fit(x=X_train,
                                   y=y_train,
                                   batch_size=BATCH_SIZE,
@@ -328,11 +339,16 @@ def main():
                                   validation_data=(X_test, y_test),
                                   #validation_split=0.2,
                                   verbose=0)
+            end = time.time()
+            trainingtimes.append((end-start))
 
+            start = time.time()
             y_pred_test = model_m.predict(X_test)
             # take class with highest probability from the test predictions
             max_y_pred_test = np.argmax(y_pred_test, axis=1)
             max_y_test = np.argmax(y_test, axis=1)
+            end = time.time()
+            predictiontimes.append((end-start))
             all_test_y.extend(max_y_test)
             all_predicted_y.extend(max_y_pred_test)
 
@@ -350,12 +366,14 @@ def main():
             K.clear_session()
             reset_seeds()
 
-  # average scores
-  print('Average scores for all folds:')
-  print(f'> Accuracy: {np.mean(acc_per_fold):.2f} (+- {np.std(acc_per_fold):.2f})')
-  print(f'> Loss: {np.mean(loss_per_fold):.2f}')
-  show_confusion_matrix(all_test_y, all_predicted_y, normalized=True)
-  print(classification_report(all_test_y, all_predicted_y))
+    # average scores
+    print('Average scores for all folds:')
+    print(f'> Accuracy: {np.mean(acc_per_fold):.2f} (+- {np.std(acc_per_fold):.2f})')
+    print(f'> Loss: {np.mean(loss_per_fold):.2f}')
+    show_confusion_matrix(all_test_y, all_predicted_y, normalized=True)
+    print(classification_report(all_test_y, all_predicted_y))
+    print('average training times: ', (sum(trainingtimes)/len(trainingtimes)))
+    print('average prediction times: ', (sum(predictiontimes)/len(predictiontimes)))
 
 
 if __name__ == "__main__":
