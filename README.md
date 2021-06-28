@@ -1,6 +1,6 @@
 # Thesis Human Activity Recognition
 
-This repository contains the software and documentation for my thesis. This thesis was completed as part of the master Artificial Intelligence at KU Leuven. The report can be found [```Here```](./Report).
+This repository contains the software and documentation for my thesis. This thesis was completed as part of the master Artificial Intelligence at KU Leuven. The report can be found [```here```](./Report/report.pdf).
 
 The software code includes tools and libraries to access data files from XSens Awinda IMUs to do preprocessing, feature extraction, classification and more. 
 
