@@ -9,7 +9,8 @@ This repository contains a set of tools and libraries to access Xsens MTw data f
     .
     ├── Data                    # Folder with all data 
     ├── Plots                   # Folder where the plots are written to
-    ├── ann_classifier          # classification with neural net 
+    ├── Report                  # Folder containing the thesis report
+    ├── ann_classifier.py       # classification with neural net 
     ├── main.py                 # main file: pre-processing, feature extraction, classifcation, evaluation, ...
     ├── utils.py                # functions for feature extraction
     ├── requirements.txt        # required packages and their versions
