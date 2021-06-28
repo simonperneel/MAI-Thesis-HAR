@@ -1,15 +1,16 @@
 # Thesis Human Activity Recognition
 
-Python code written for my thesis
+This repository contains the software and documentation for my thesis. This thesis was completed as part of the master Artificial Intelligence at KU Leuven. The report can be found [```Here```](./Report).
 
-This repository contains a set of tools and libraries to access Xsens MTw data files and do processing, feature extraction, classification and more. 
+The software code includes tools and libraries to access data files from XSens Awinda IMUs to do preprocessing, feature extraction, classification and more. 
 
 ## Folder structure
 
     .
     ├── Data                    # Folder with all data 
     ├── Plots                   # Folder where the plots are written to
-    ├── ann_classifier          # classification with neural net 
+    ├── Report                  # Folder containing the thesis report
+    ├── ann_classifier.py       # classification with neural net 
     ├── main.py                 # main file: pre-processing, feature extraction, classifcation, evaluation, ...
     ├── utils.py                # functions for feature extraction
     ├── requirements.txt        # required packages and their versions
