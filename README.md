@@ -59,7 +59,7 @@ This is one trial of an activity by a subject. These files are read in and the m
 | 400           | 2          | 10.23         | 4.99          |     | 2.33          | -5.45         |     | 3.49          | 0.98          |     | running        |
 
 ### [```ann_classifier.py```](./ann_classifier.py)
-classification on ***raw*** data with a MLP neural net. 
+classification on ***raw*** acceleration and gyroscope data with a MLP neural net. 
 
 ### [```utils.py```](./utils.py) 
 file containing some self-defined functions for feature extraction
