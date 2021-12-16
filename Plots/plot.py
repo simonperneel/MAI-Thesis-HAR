@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 sns.set()
 
-# General seettings
+# General settings
 SMALL_SIZE = 8
 MEDIUM_SIZE = 14
 BIGGER_SIZE = 20
