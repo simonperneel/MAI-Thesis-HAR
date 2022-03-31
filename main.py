@@ -289,7 +289,7 @@ def feat_extract(all_segments_df, feature_set):
         # additional orientation feature, calculated with apply function
         Y = all_segments_df.groupby('Segment-id').apply(orientation_difference)
 
-    # add orientation feature with the other featuress
+    # add orientation feature with the other features
     X = pd.merge(X, Y, on=('Segment-id'))
     end = time.time()
     print('computing time features: %.2f' % (end-start))
