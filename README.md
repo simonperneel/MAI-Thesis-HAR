@@ -1,5 +1,5 @@
 # Thesis Human Activity Recognition
-This thesis develops an activity recognition system using wearable MIMU sensors, focusing on efficient, orientation-independent features. Magnetometer data showed little added value, while ankle placement provided the best results. The final system achieved high accuracy (0.97) and F1-score (0.98) using 20 features from the accelerometer and gyroscope.
+This thesis investigates the optimisation of activity recognition systems using wearable MIMU sensors, focusing on efficient, orientation-independent features. Magnetometer data showed little added value, while ankle placement provided the best results. The final system achieved high accuracy (0.97) and F1-score (0.98) using 20 features from the accelerometer and gyroscope.
 
 This repository contains the dataset, software and documentation. The thesis was completed as part of the master Artificial Intelligence at KU Leuven. The report can be found [```here```](./Report/report.pdf).
 
