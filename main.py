@@ -2,13 +2,13 @@
     Python code for my master thesis -
     identification of inertial features for the optimal recogition of physical activities
 
-    script to load MTw XSens generated csv file into a dataframe,
-    divide the time series IMU data in time windows,
-    add and select good features from it,
-    classify the activities using a learning algorithm
-    and evaluate the model
+    This script loads the MTw XSens generated csv file,
+    divides the time series IMU data in time windows,
+    extracts and select informative features from it,
+    classify the activities (9 different) using a learning algorithm
+    and evaluates the chosen model
 
-		Author: Simon Perneel - simon.perneel@hotmail.com
+		Author: Simon Perneel - simon.perneel@outlook.com
 """
 
 import pandas as pd
